@@ -1,0 +1,86 @@
+import numpy as np
+import pydot
+from IPython.display import Image
+
+def visualize_binomial_tree_graphviz_with_custom_styles(S_0, K, T, r, sigma, n, option_type, style):
+    dt = T / n
+    u = np.exp(sigma * np.sqrt(dt))
+    d = 1 / u
+    a = np.exp(r * dt)
+    p = (a - d) / (u - d)
+
+    stock_price = np.zeros((n + 1, n + 1))
+    option_value = np.zeros((n + 1, n + 1))
+    early_exercise_steps = []  # To track early exercise steps for American options
+
+    # Build stock price and option value matrices
+    for i in range(n + 1):
+        for j in range(i + 1):
+            stock_price[i, j] = S_0 * (u ** (i - j)) * (d ** j)
+
+    for j in range(n + 1):
+        if option_type == 'call':
+            option_value[n, j] = max(stock_price[n, j] - K, 0)
+        elif option_type == 'put':
+            option_value[n, j] = max(K - stock_price[n, j], 0)
+
+    for i in range(n - 1, -1, -1):
+        for j in range(i + 1):
+            hold_value = (p * option_value[i + 1, j] + (1 - p) * option_value[i + 1, j + 1]) * np.exp(-r * dt)
+            if style == 'american':
+                exercise_value = max(stock_price[i, j] - K, 0) if option_type == 'call' else max(K - stock_price[i, j], 0)
+                option_value[i, j] = max(hold_value, exercise_value)
+
+                # Track early exercise steps only if option value is non-zero
+                if option_value[i, j] == exercise_value and option_value[i, j] > 0:
+                    early_exercise_steps.append((i, j))
+            else:
+                option_value[i, j] = hold_value
+
+    # Print final option value and parameters
+    print(f"Final Option Value: {option_value[0, 0]:.2f}")
+    print(f"Probability (p): {p:.4f}, Up (u): {u:.4f}, Down (d): {d:.4f}")
+
+    if style == 'american' and early_exercise_steps:
+        print(f"Early exercise occurs at nodes: {early_exercise_steps}")
+
+    graph = pydot.Dot(graph_type='digraph', rankdir="LR", bgcolor="transparent")
+
+    nodes = {}
+    for i in range(n + 1):
+        for j in range(i + 1):
+            # Custom color for early exercise nodes
+            color = "#008080" if (i, j) in early_exercise_steps else "#003366" if option_value[i, j] > 0 else "#B22222"
+            label = f"Stock: {stock_price[i, j]:.2f}\nOption Value: {option_value[i, j]:.2f}"
+            node = pydot.Node(f"node_{i}_{j}",
+                              label=label,
+                              shape="ellipse",
+                              style="filled",
+                              fillcolor=color,
+                              fontsize="10",
+                              fontname="Helvetica-Bold",
+                              fontcolor="white",
+                              width="0.7",
+                              height="0.3")
+            graph.add_node(node)
+            nodes[(i, j)] = node
+
+    for i in range(n):
+        for j in range(i + 1):
+            edge_up = pydot.Edge(nodes[(i, j)], nodes[(i + 1, j)],
+                                 color="#28A745", style="solid")
+            graph.add_edge(edge_up)
+            edge_down = pydot.Edge(nodes[(i, j)], nodes[(i + 1, j + 1)],
+                                   color="#DC3545", style="solid")
+            graph.add_edge(edge_down)
+
+    graph.add_node(pydot.Node("header", label="Stock and Option Value", shape="plaintext", fontsize="12", fontname="Helvetica-Bold", fontcolor="black"))
+    for j in range(n + 1):
+        if (0, j) in nodes:
+            graph.add_edge(pydot.Edge("header", nodes[(0, j)], style="invis"))
+
+    graph.write_png("custom_styled_binomial_tree.png")
+    return Image(filename="custom_styled_binomial_tree.png")
+
+# Example usage
+visualize_binomial_tree_graphviz_with_custom_styles(S_0=120, K=150, T=4, r=0.05, sigma=0.5, n=10, option_type='put', style='european')
